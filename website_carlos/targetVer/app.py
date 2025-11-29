@@ -3,6 +3,12 @@ import time
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import sys
+import os
+
+# Add parent directory to path to allow importing from sibling directories
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from adviceModule_Esin.advice import generate_advice_for_symptom
 
 # Page Config
 st.set_page_config(
@@ -31,43 +37,102 @@ if 'data' not in st.session_state:
     st.session_state.data = {}
 
 # --- Mock Backend Logic ---
-def predict_risk(data):
+def predict_outcomes(data):
     """
     Simulates a call to a Random Forest model.
-    Returns: probability (float), label (str), color (str)
+    Returns: 
+        - dep_prob (float): Probability of Depression
+        - dep_label (str)
+        - dep_color (str)
+        - suicide_prob (float): Probability of Suicidal Thoughts
+        - suicide_label (str)
     """
     time.sleep(2) # Simulate network/processing latency
     
-    # Simple heuristic for demonstration
+    # --- Depression Risk Heuristic ---
     score = 0
     # Academic Factors
     if data.get('academic_pressure', 0) >= 4: score += 1.5
     if data.get('study_satisfaction', 0) <= 2: score += 1
+    if data.get('study_hours', 0) > 10: score += 0.5
     
     # Health Factors
     if data.get('sleep_quality', 0) <= 2: score += 1.5
     if data.get('financial_stress', 0) >= 4: score += 1
-    if data.get('family_history') == "Sí": score += 1
+    if data.get('family_history') == "Yes": score += 1
     
     # Normalize to a probability roughly between 0.1 and 0.9
     base_prob = 0.15
-    prob = base_prob + (score * 0.12)
+    dep_prob = base_prob + (score * 0.12)
     
-    # Add some random noise to make it feel "calculated"
-    prob += np.random.uniform(-0.02, 0.02)
-    prob = min(0.98, max(0.02, prob))
+    # Add some random noise
+    dep_prob += np.random.uniform(-0.02, 0.02)
+    dep_prob = min(0.98, max(0.02, dep_prob))
     
-    if prob > 0.65:
-        label = "Riesgo Alto"
-        color = "red"
-    elif prob > 0.35:
-        label = "Riesgo Moderado"
-        color = "orange"
+    if dep_prob > 0.65:
+        dep_label = "High Risk"
+        dep_color = "red"
+    elif dep_prob > 0.35:
+        dep_label = "Moderate Risk"
+        dep_color = "orange"
     else:
-        label = "Riesgo Bajo"
-        color = "green"
+        dep_label = "Low Risk"
+        dep_color = "green"
         
-    return prob, label, color
+    # --- Suicidal Thoughts Risk Heuristic ---
+    # Correlated with high pressure, financial stress, and family history
+    s_score = 0
+    if data.get('academic_pressure', 0) >= 4: s_score += 1.5
+    if data.get('financial_stress', 0) >= 4: s_score += 1.5
+    if data.get('family_history') == "Yes": s_score += 1.5
+    if data.get('diet_quality', 0) <= 2: s_score += 0.5
+    
+    base_s_prob = 0.05
+    suicide_prob = base_s_prob + (s_score * 0.15)
+    suicide_prob = min(0.95, max(0.01, suicide_prob))
+    
+    if suicide_prob > 0.5:
+        suicide_label = "DETECTED"
+    else:
+        suicide_label = "LOW"
+        
+    return dep_prob, dep_label, dep_color, suicide_prob, suicide_label
+
+def get_advice_data(data):
+    """
+    Maps app data to advice module format.
+    Returns a dictionary of symptoms and their advice.
+    """
+    advice_results = {}
+    
+    # Map Sleep: 1-5 (High is good) -> 0-10 (High is bad)
+    # 1->10, 2->8, 3->6, 4->4, 5->2
+    if 'sleep_quality' in data:
+        sleep_score = (6 - data['sleep_quality']) * 2
+        advice_results['sleep'] = generate_advice_for_symptom('sleep', sleep_score)
+        
+    # Map Appetite/Diet: 1-5 (High is good) -> 0-10 (High is bad)
+    if 'diet_quality' in data:
+        diet_score = (6 - data['diet_quality']) * 2
+        advice_results['appetite'] = generate_advice_for_symptom('appetite', diet_score)
+        
+    # Map Stress: Avg of Academic & Financial (1-5, High is bad) -> 0-10 (High is bad)
+    # 1->2, 2->4, 3->6, 4->8, 5->10
+    stress_sources = []
+    if 'academic_pressure' in data: stress_sources.append(data['academic_pressure'])
+    if 'financial_stress' in data: stress_sources.append(data['financial_stress'])
+    
+    if stress_sources:
+        avg_stress = sum(stress_sources) / len(stress_sources)
+        stress_score = avg_stress * 2
+        advice_results['stress'] = generate_advice_for_symptom('stress', stress_score)
+        
+    # Map Mood: Study Satisfaction (1-5, High is good) -> 0-10 (High is bad)
+    if 'study_satisfaction' in data:
+        mood_score = (6 - data['study_satisfaction']) * 2
+        advice_results['mood'] = generate_advice_for_symptom('mood', mood_score)
+        
+    return advice_results
 
 # --- Navigation Functions ---
 def next_step():
@@ -86,91 +151,87 @@ with st.sidebar:
     st.markdown("---")
     st.info(
         """
-        **Sobre este proyecto:**
+        **About this project:**
         
-        Esta herramienta utiliza Inteligencia Artificial (simulada) para detectar patrones de riesgo de depresión en estudiantes.
+        This tool uses Artificial Intelligence (simulated) to detect depression risk patterns in students.
         
-        Basado en el dataset: *Student Depression Dataset (Kaggle)*.
+        Based on dataset: *Student Depression Dataset (Kaggle)*.
         """
     )
     st.warning(
-        "⚠️ **Disclaimer:** Esta aplicación es un prototipo educativo. No sustituye el diagnóstico de un profesional."
+        "⚠️ **Disclaimer:** This application is an educational prototype. It does not replace professional diagnosis."
     )
     st.markdown("---")
-    st.caption("v2.0 - Target Product")
+    st.caption("v2.1 - Target Product")
 
 # --- Main Content ---
 
 # Progress Bar (Only for steps 1-3)
 if st.session_state.step < 4:
-    st.markdown(f"### Paso {st.session_state.step} de 3")
+    st.markdown(f"### Step {st.session_state.step} of 3")
     progress_val = (st.session_state.step - 1) / 3
     st.progress(progress_val)
 
-# ---------------- STEP 1: PERFIL ----------------
+# ---------------- STEP 1: PERFIL & ANTECEDENTES ----------------
 if st.session_state.step == 1:
-    st.header("👤 Perfil y Datos Básicos")
-    st.markdown("Comencemos con información general para calibrar el modelo.")
+    st.header("👤 Profile & Background")
+    st.markdown("Basic information and family history.")
     
     with st.form("step1_form"):
         col1, col2 = st.columns(2)
         with col1:
-            age = st.number_input("Edad", min_value=16, max_value=60, value=20)
-            gender = st.selectbox("Género", ["Masculino", "Femenino", "Otro"])
+            age = st.number_input("Age", min_value=16, max_value=60, value=20)
+            gender = st.selectbox("Gender", ["Male", "Female", "Other"])
         with col2:
-            city = st.text_input("Ciudad de Residencia", placeholder="Ej. Madrid, Lima, CDMX")
-            year = st.selectbox("Año de Carrera", ["1er Año", "2do Año", "3er Año", "4to Año", "5to Año+"])
+            history = st.radio("Family History of Depression", ["Yes", "No"], horizontal=True)
             
         st.markdown("---")
-        submitted = st.form_submit_button("Siguiente ➡️", type="primary")
+        submitted = st.form_submit_button("Next ➡️", type="primary")
         
         if submitted:
-            if not city.strip():
-                st.error("⚠️ Por favor ingresa tu ciudad para continuar.")
-            else:
-                st.session_state.data.update({
-                    "age": age, "gender": gender, "city": city, "year": year
-                })
-                next_step()
-                st.rerun()
+            st.session_state.data.update({
+                "age": age, "gender": gender, "family_history": history
+            })
+            next_step()
+            st.rerun()
 
 # ---------------- STEP 2: ACADÉMICO ----------------
 elif st.session_state.step == 2:
-    st.header("📚 Entorno Académico")
-    st.markdown("Factores relacionados con tu vida universitaria.")
+    st.header("📚 Academic Environment")
+    st.markdown("Factors related to your university life.")
     
     with st.form("step2_form"):
         col1, col2 = st.columns(2)
         with col1:
-            cgpa = st.number_input("CGPA (Promedio Acumulado)", min_value=0.0, max_value=10.0, value=3.5, step=0.1, help="Escala de 0 a 10")
+            study_hours = st.number_input("Study Hours (Daily Average)", min_value=0, max_value=24, value=4)
         with col2:
-            study_satisfaction = st.slider("Satisfacción con tus Estudios", 1, 5, 3, help="1 = Muy Insatisfecho, 5 = Muy Satisfecho")
+            study_satisfaction = st.slider("Study Satisfaction", 1, 5, 3, help="1 = Very Dissatisfied, 5 = Very Satisfied")
         
-        st.markdown("#### Presión Académica")
-        academic_pressure = st.slider("Nivel de Presión Percibida (1-5)", 1, 5, 3)
+        st.markdown("#### Academic Pressure")
+        academic_pressure = st.slider("Perceived Pressure Level (1-5)", 1, 5, 3)
         
-        with st.expander("ℹ️ Guía para calificar la Presión Académica"):
+        with st.expander("ℹ️ Guide to rating Academic Pressure"):
             st.markdown("""
-            *   **1 (Muy Baja):** Te sientes completamente relajado/a.
-            *   **2 (Baja):** Tienes tareas pero son manejables.
-            *   **3 (Moderada):** Presión normal de época de clases.
-            *   **4 (Alta):** Te sientes ansioso/a por las entregas frecuentemente.
-            *   **5 (Muy Alta):** La presión afecta tu sueño o salud.
+            *   **1 (Very Low):** You feel completely relaxed.
+            *   **2 (Low):** You have tasks but they are manageable.
+            *   **3 (Moderate):** Normal pressure for class periods.
+            *   **4 (High):** You feel anxious about deadlines frequently.
+            *   **5 (Very High):** Pressure affects your sleep or health.
             """)
             
         st.markdown("---")
         c1, c2 = st.columns([1, 1])
         with c1:
-            back = st.form_submit_button("⬅️ Atrás")
+            back = st.form_submit_button("⬅️ Back")
         with c2:
-            submitted = st.form_submit_button("Siguiente ➡️", type="primary")
+            submitted = st.form_submit_button("Next ➡️", type="primary")
             
         if back:
             prev_step()
             st.rerun()
         if submitted:
             st.session_state.data.update({
-                "cgpa": cgpa, 
+                "study_hours": study_hours, 
                 "study_satisfaction": study_satisfaction, 
                 "academic_pressure": academic_pressure
             })
@@ -179,30 +240,27 @@ elif st.session_state.step == 2:
 
 # ---------------- STEP 3: SALUD Y BIENESTAR ----------------
 elif st.session_state.step == 3:
-    st.header("❤️ Salud y Bienestar")
-    st.markdown("Hábitos de vida y factores externos.")
+    st.header("❤️ Health & Wellness")
+    st.markdown("Lifestyle habits and external factors.")
     
     with st.form("step3_form"):
         col1, col2 = st.columns(2)
         with col1:
-            sleep = st.selectbox("Horas de Sueño (Promedio)", ["Menos de 5 h", "5-6 h", "7-8 h", "Más de 8 h"])
-            diet = st.selectbox("Hábitos Alimenticios", ["No Saludable", "Moderado", "Saludable"])
+            sleep = st.selectbox("Sleep Hours (Average)", ["Less than 5 h", "5-6 h", "7-8 h", "More than 8 h"])
+            diet = st.selectbox("Dietary Habits", ["Unhealthy", "Moderate", "Healthy"])
         with col2:
-            history = st.radio("Historial Familiar de Depresión", ["Sí", "No"], horizontal=True)
+            financial_stress = st.slider("Financial Stress Level", 1, 5, 3, help="1 = No worries, 5 = Severe difficulties")
             
-        st.markdown("#### Situación Financiera")
-        financial_stress = st.slider("Nivel de Estrés Financiero", 1, 5, 3, help="1 = Sin preocupaciones, 5 = Dificultades severas")
-        
         # Mappings for data processing
-        sleep_map = {"Menos de 5 h": 1, "5-6 h": 2, "7-8 h": 4, "Más de 8 h": 5}
-        diet_map = {"No Saludable": 1, "Moderado": 3, "Saludable": 5}
+        sleep_map = {"Less than 5 h": 1, "5-6 h": 2, "7-8 h": 4, "More than 8 h": 5}
+        diet_map = {"Unhealthy": 1, "Moderate": 3, "Healthy": 5}
         
         st.markdown("---")
         c1, c2 = st.columns([1, 1])
         with c1:
-            back = st.form_submit_button("⬅️ Atrás")
+            back = st.form_submit_button("⬅️ Back")
         with c2:
-            submitted = st.form_submit_button("🚀 Calcular Probabilidad", type="primary")
+            submitted = st.form_submit_button("🚀 Calculate Probability", type="primary")
             
         if back:
             prev_step()
@@ -213,7 +271,6 @@ elif st.session_state.step == 3:
                 "sleep_quality": sleep_map[sleep],
                 "diet_raw": diet,
                 "diet_quality": diet_map[diet],
-                "family_history": history,
                 "financial_stress": financial_stress
             })
             next_step()
@@ -225,42 +282,48 @@ elif st.session_state.step == 4:
     
     # Simulation of processing
     if 'processed' not in st.session_state:
-        with st.spinner("🔄 Analizando patrones en tus respuestas..."):
-            prob, label, color = predict_risk(st.session_state.data)
-            st.session_state.result = {"prob": prob, "label": label, "color": color}
+        with st.spinner("🔄 Analyzing patterns in your responses..."):
+            dep_prob, dep_label, dep_color, suicide_prob, suicide_label = predict_outcomes(st.session_state.data)
+            st.session_state.result = {
+                "dep_prob": dep_prob, "dep_label": dep_label, "dep_color": dep_color,
+                "suicide_prob": suicide_prob, "suicide_label": suicide_label,
+                "advice_data": get_advice_data(st.session_state.data)
+            }
             st.session_state.processed = True
             time.sleep(0.5) # Extra smooth feel
             st.rerun()
     
     # Retrieve results
     res = st.session_state.result
-    prob = res['prob']
-    label = res['label']
-    color = res['color']
+    dep_prob = res['dep_prob']
+    dep_label = res['dep_label']
+    dep_color = res['dep_color']
+    suicide_prob = res['suicide_prob']
+    suicide_label = res['suicide_label']
     
     # Header
-    st.title("📊 Resultados del Análisis")
-    if prob < 0.4:
-        st.success("Análisis completado exitosamente.")
-    elif prob < 0.7:
-        st.warning("Análisis completado. Se detectaron algunos factores de riesgo.")
+    st.title("📊 Analysis Results")
+    if dep_prob < 0.4:
+        st.success("Analysis completed successfully.")
+    elif dep_prob < 0.7:
+        st.warning("Analysis completed. Some risk factors detected.")
     else:
-        st.error("Análisis completado. Atención requerida.")
+        st.error("Analysis completed. Attention required.")
 
     # Main Dashboard Layout
     col_gauge, col_radar = st.columns([1, 1.2])
     
     with col_gauge:
-        st.subheader("Probabilidad de Depresión")
+        st.subheader("Depression Risk")
         # Gauge Chart
         fig_gauge = go.Figure(go.Indicator(
             mode = "gauge+number",
-            value = prob * 100,
+            value = dep_prob * 100,
             number = {'suffix': "%"},
-            title = {'text': f"Nivel: <span style='color:{color}'>{label}</span>", 'font': {'size': 20}},
+            title = {'text': f"Level: <span style='color:{dep_color}'>{dep_label}</span>", 'font': {'size': 20}},
             gauge = {
                 'axis': {'range': [None, 100]},
-                'bar': {'color': color},
+                'bar': {'color': dep_color},
                 'steps': [
                     {'range': [0, 35], 'color': "rgba(76, 175, 80, 0.3)"},
                     {'range': [35, 65], 'color': "rgba(255, 152, 0, 0.3)"},
@@ -268,20 +331,40 @@ elif st.session_state.step == 4:
                 'threshold': {
                     'line': {'color': "black", 'width': 4},
                     'thickness': 0.75,
-                    'value': prob * 100}}))
+                    'value': dep_prob * 100}}))
         
-        fig_gauge.update_layout(height=300, margin=dict(l=20, r=20, t=50, b=20))
+        fig_gauge.update_layout(height=250, margin=dict(l=20, r=20, t=30, b=20))
         st.plotly_chart(fig_gauge, use_container_width=True)
         
+        # Suicidal Thoughts Indicator
+        st.markdown("---")
+        st.subheader("Suicidal Thoughts")
+        if suicide_label == "DETECTED":
+            st.markdown(
+                f"""
+                <div style="padding: 15px; border-radius: 10px; background-color: rgba(255, 0, 0, 0.2); text-align: center; border: 2px solid red;">
+                    <h3 style="color: red; margin: 0;">RISK DETECTED</h3>
+                    <p style="margin: 5px 0 0 0;">Estimated probability: {int(suicide_prob*100)}%</p>
+                </div>
+                """, unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f"""
+                <div style="padding: 15px; border-radius: 10px; background-color: rgba(76, 175, 80, 0.2); text-align: center; border: 2px solid green;">
+                    <h3 style="color: green; margin: 0;">LOW RISK</h3>
+                    <p style="margin: 5px 0 0 0;">Estimated probability: {int(suicide_prob*100)}%</p>
+                </div>
+                """, unsafe_allow_html=True
+            )
+        
     with col_radar:
-        st.subheader("Tú vs. Estudiante Promedio")
+        st.subheader("You vs. Average Student")
         
         # Prepare Data for Radar
-        categories = ['Presión Acad.', 'Satisfacción', 'Estrés Fin.', 'Calidad Sueño', 'Dieta']
+        categories = ['Acad. Pressure', 'Satisfaction', 'Fin. Stress', 'Sleep Quality', 'Diet']
         
         # Normalize user values to 0-5 scale roughly for visualization
-        # Sleep (1,2,4,5) -> direct
-        # Diet (1,3,5) -> direct
         user_vals = [
             st.session_state.data['academic_pressure'],
             st.session_state.data['study_satisfaction'],
@@ -299,7 +382,7 @@ elif st.session_state.step == 4:
             r=avg_vals,
             theta=categories,
             fill='toself',
-            name='Promedio',
+            name='Average',
             line_color='gray',
             opacity=0.5
         ))
@@ -308,7 +391,7 @@ elif st.session_state.step == 4:
             r=user_vals,
             theta=categories,
             fill='toself',
-            name='Tú',
+            name='You',
             line_color='#4ecdc4'
         ))
         
@@ -327,21 +410,21 @@ elif st.session_state.step == 4:
     st.markdown("---")
     
     # Recommendations Section
-    st.subheader("💡 Recomendaciones Personalizadas")
+    st.subheader("💡 Personalized Recommendations")
     
     rec_col1, rec_col2 = st.columns([2, 1])
     
     with rec_col1:
-        if prob > 0.5:
+        if dep_prob > 0.5 or suicide_label == "DETECTED":
             st.markdown(
                 """
                 <div style="padding: 20px; border-radius: 10px; background-color: rgba(255, 0, 0, 0.1); border-left: 5px solid red;">
-                    <h4>⚠️ Riesgo Elevado Detectado</h4>
-                    <p>Tus respuestas indican niveles altos de estrés y factores de riesgo asociados a la depresión.</p>
+                    <h4>⚠️ High Risk Detected</h4>
+                    <p>Your responses indicate high levels of stress and risk factors associated with depression.</p>
                     <ul>
-                        <li><strong>Busca apoyo:</strong> No dudes en contactar a los servicios de bienestar estudiantil.</li>
-                        <li><strong>Habla con alguien:</strong> Compartir tus sentimientos con un amigo o familiar puede ayudar.</li>
-                        <li><strong>Prioriza el descanso:</strong> Intenta regular tu ciclo de sueño.</li>
+                        <li><strong>Seek support:</strong> Do not hesitate to contact student wellness services.</li>
+                        <li><strong>Talk to someone:</strong> Sharing your feelings with a friend or family member can help.</li>
+                        <li><strong>Prioritize rest:</strong> Try to regulate your sleep cycle.</li>
                     </ul>
                 </div>
                 """, unsafe_allow_html=True
@@ -350,28 +433,50 @@ elif st.session_state.step == 4:
             st.markdown(
                 """
                 <div style="padding: 20px; border-radius: 10px; background-color: rgba(0, 255, 0, 0.1); border-left: 5px solid green;">
-                    <h4>✅ Estado Saludable</h4>
-                    <p>Tus indicadores sugieren un buen equilibrio entre vida académica y personal.</p>
+                    <h4>✅ Healthy State</h4>
+                    <p>Your indicators suggest a good balance between academic and personal life.</p>
                     <ul>
-                        <li>Sigue manteniendo tus hábitos de sueño y alimentación.</li>
-                        <li>Si sientes que la presión aumenta, toma descansos activos.</li>
+                        <li>Keep maintaining your sleep and eating habits.</li>
+                        <li>If you feel pressure increasing, take active breaks.</li>
                     </ul>
                 </div>
                 """, unsafe_allow_html=True
             )
             
     with rec_col2:
-        st.markdown("### 📞 Recursos")
+        st.markdown("### 📞 Resources")
         st.markdown(
             """
-            *   **Emergencias:** 911
-            *   **Línea de Vida:** 988
-            *   **Consejería Univ:** (555) 123-4567
+            *   **Emergency:** 911
+            *   **Lifeline:** 988
+            *   **Univ Counseling:** (555) 123-4567
             """
         )
 
     st.markdown("---")
-    if st.button("🔄 Realizar Nueva Encuesta"):
+    
+    # --- New Advice Panel ---
+    st.subheader("🧩 Detailed Advice & Severity")
+    
+    if 'advice_data' in res:
+        advice_data = res['advice_data']
+        
+        for symptom, info in advice_data.items():
+            severity = info['severity']
+            advice = info['advice']
+            score = info['score']
+            
+            # Color coding for severity
+            sev_color = "green"
+            if severity == "medium": sev_color = "orange"
+            if severity == "high": sev_color = "red"
+            
+            with st.expander(f"**{symptom.capitalize()}** - Severity: :{sev_color}[{severity.upper()}]"):
+                st.write(f"**Advice:** {advice}")
+                st.progress(min(100, int(score * 10)))
+
+    st.markdown("---")
+    if st.button("🔄 Start New Survey"):
         # Clear specific keys or just reset step
         st.session_state.processed = False # Reset flag
         restart()
