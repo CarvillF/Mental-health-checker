@@ -36,6 +36,11 @@ sys
 
 ## Author(s) and contribution summary
 
-Carlos Vladimir Flores Villacís - Developed and integrated the front end of the application. Refactored code to align with VGC standards and hosted website on streamlit.
-Esin Karapinar - Developed the customized advice module based on user inputs. Assisted Carlos with code functions.  
-Grace Marrone - Developed the machine learning algorithm to make predictions based on user input. Assisted Carlos with code functions.  
+#### Carlos Vladimir Flores Villacís
+Developed and integrated the front end of the application. Refactored code to align with VGC standards and hosted website on streamlit.  
+
+#### Esin Karapinar
+Developed the customized advice module based on user inputs. Assisted Carlos with code functions.  
+
+#### Grace Marrone
+Developed the machine learning algorithm to make predictions based on user input. Assisted Carlos with code functions.  
