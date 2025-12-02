@@ -48,23 +48,22 @@ ADVICE = {
 def get_severity_level(score):
    
     if score <= 3:
-        return "low"
+        return "low"  # 0 to 3 doing well
     elif score <= 6:
-        return "medium"
+        return "medium"  # 4 to 6 concern
     else:
-        return "high"
+        return "high"    # 7 to 10 need help
 
-# help function (generate advice for one symptom)
-
+# Generate advice for one symptom based on score
 def generate_advice_for_symptom(symptom_name, score):
     
-    severity = get_severity_level(score)
+    severity = get_severity_level(score) #get severity level 
     
     # Get advice from database
     if symptom_name in ADVICE:
         advice_text = ADVICE[symptom_name][severity]
     else:
-        advice_text = "Please consult with a healthcare professional for personalized guidance."
+        advice_text = "Please consult with a healthcare professional for personalized guidance." # if symptom not found
     
     return {
         "score": score,
@@ -72,18 +71,17 @@ def generate_advice_for_symptom(symptom_name, score):
         "advice": advice_text
     }
 
-# Calculate overall risk
+# Calculate overall mental health risk from all symptom scores
 def calculate_overall_risk(scores):
-    
     # Calculate average of all scores
     score_values = [score for score in scores.values() if score is not None]
     
-    if not score_values:
+    if not score_values: #Handle empty input 
         return "Unknown", 0
-    
+    #Calculate ave. score
     avg_score = sum(score_values) / len(score_values)
     
-    # Determine risk level
+    # Determine risk level based on average 
     if avg_score <= 3:
         risk = "Low Risk"
     elif avg_score <= 6:
@@ -91,5 +89,5 @@ def calculate_overall_risk(scores):
     else:
         risk = "High Risk"
     
-    return risk, round(avg_score, 1)
+    return risk, round(avg_score, 1) # return risk level and rounded ave.
 
